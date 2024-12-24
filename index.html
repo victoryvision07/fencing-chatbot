@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fencing Club AI Assistant</title>
+    <!-- Tailwind CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <!-- React & Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans KR', 'Noto Sans SC', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-4xl mx-auto">
+            <!-- Header Section -->
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-gray-800 mb-4">Fencing Club AI Assistant</h1>
+                <div class="inline-flex space-x-4 bg-white rounded-lg shadow p-2">
+                    <button class="lang-btn px-4 py-2 rounded bg-blue-500 text-white hover:bg-blue-600 transition" data-lang="ko">한국어</button>
+                    <button class="lang-btn px-4 py-2 rounded bg-blue-500 text-white hover:bg-blue-600 transition" data-lang="cn">中文</button>
+                    <button class="lang-btn px-4 py-2 rounded bg-blue-500 text-white hover:bg-blue-600 transition" data-lang="en">English</button>
+                </div>
+            </div>
+            
+            <!-- Chatbot Container -->
+            <div id="chatbot-root"></div>
+        </div>
+    </div>
+
+    <!-- Chatbot Component -->
+    <script type="text/babel">
+        // Intent Patterns
+        const INTENT_PATTERNS = {
+            ko: {
+                course: [/수업/, /과정/, /강습/],
+                schedule: [/시간/, /언제/, /스케줄/],
+                price: [/가격/, /비용/, /요금/],
+                location: [/위치/, /어디/, /찾아/, /주소/],
+                greeting: [/안녕/, /하이/, /hello/]
+            },
+            cn: {
+                course: [/课程/, /课/, /学习/, /培训/],
+                schedule: [/时间/, /什么时候/, /日程/, /几点/],
+                price: [/价格/, /费用/, /多少钱/, /收费/],
+                location: [/位置/, /在哪/, /怎么走/, /地址/],
+                greeting: [/你好/, /您好/, /hi/, /哈啰/]
+            },
+            en: {
+                course: [/class/, /course/, /lesson/, /training/, /learn/],
+                schedule: [/time/, /when/, /schedule/, /hours/, /open/],
+                price: [/price/, /cost/, /fee/, /charge/, /pay/, /much/],
+                location: [/where/, /location/, /find/, /located/, /address/, /place/, /direction/],
+                greeting: [/hi/, /hello/, /hey/, /good/]
+            }
+        };
+
+        const ChatBot = ({ language = 'ko' }) => {
+            const [messages, setMessages] = React.useState([]);
+            const [input, setInput] = React.useState('');
+            const [isLoading, setIsLoading] = React.useState(false);
+            const chatEndRef = React.useRef(null);
+            const [context, setContext] = React.useState({
+                lastIntent: null,
+                mentionedCourses: [],
+                askedPrice: false,
+                questionCount: 0
+            });
+
+            React.useEffect(() => {
+                addMessage('bot', getWelcomeMessage(language));
+            }, [language]);
+
+            React.useEffect(() => {
+                chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [messages]);
+
+            const getWelcomeMessage = (lang) => {
+                const messages = {
+                    ko: "안녕하세요! 펜싱 클럽 도우미입니다. 수업, 시간, 가격, 위치에 대해 문의해주세요.",
+                    cn: "您好！我是击剑俱乐部助手。请询问课程、时间、价格和位置相关问题。",
+                    en: "Hello! I'm your fencing club assistant. Ask me about classes, schedules, pricing, and location."
+                };
+                return messages[lang];
+            };
+
+            const detectIntents = (input) => {
+                const intents = [];
+                Object.entries(INTENT_PATTERNS[language]).forEach(([intent, patterns]) => {
+                    if (patterns.some(pattern => pattern.test(input.toLowerCase()))) {
+                        intents.push(intent);
+                    }
+                });
+                return intents;
+            };
+
+            const generateResponse = (intents, userInput) => {
+                if (intents.length === 0) {
+                    return getDefaultResponse(language, context.questionCount);
+                }
+
+                let response = '';
+                intents.forEach(intent => {
+                    switch (intent) {
+                        case 'greeting':
+                            response += getGreetingResponse(language) + '\n\n';
+                            break;
+                        case 'course':
+                            response += getCourseInfo(language) + '\n\n';
+                            setContext(prev => ({...prev, lastIntent: 'course'}));
+                            break;
+                        case 'schedule':
+                            response += getScheduleInfo(language) + '\n\n';
+                            break;
+                        case 'price':
+                            response += getPriceInfo(language) + '\n\n';
+                            setContext(prev => ({...prev, askedPrice: true}));
+                            break;
+                        case 'location':
+                            response += getLocationInfo(language) + '\n\n';
+                            break;
+                    }
+                });
+
+                response += getContextualSuggestions(language, context);
+                
+                setContext(prev => ({
+                    ...prev, 
+                    questionCount: prev.questionCount + 1
+                }));
+
+                return response.trim();
+            };
+
+            const getDefaultResponse = (lang, questionCount) => {
+                if (questionCount === 0) {
+                    const responses = {
+                        ko: "죄송합니다. 이해하지 못했습니다. 수업, 시간, 가격, 위치에 대해 문의해주세요.",
+                        cn: "抱歉，我没有理解您的问题。您可以询问关于课程、时间、价格或位置的问题。",
+                        en: "I'm sorry, I didn't understand. You can ask about classes, schedules, pricing, or location."
+                    };
+                    return responses[lang];
+                }
+                
+                const responses = {
+                    ko: "죄송합니다. 예를 들어 다음과 같이 질문해 주세요:\n• '수업 시간이 어떻게 되나요?'\n• '수업 가격이 얼마인가요?'\n• '클럽 위치가 어디인가요?'",
+                    cn: "抱歉。您可以这样提问：\n• '课程时间是怎样的？'\n• '学费是多少？'\n• '俱乐部在哪里？'",
+                    en: "I'm sorry. Try asking questions like:\n• 'What are your class hours?'\n• 'How much do lessons cost?'\n• 'Where is the club located?'"
+                };
+                return responses[lang];
+            };
+
+            const getGreetingResponse = (lang) => {
+                const responses = {
+                    ko: "안녕하세요! 무엇을 도와드릴까요?",
+                    cn: "您好！需要什么帮助？",
+                    en: "Hi there! How can I help you today?"
+                };
+                return responses[lang];
+            };
+
+            const getCourseInfo = (lang) => {
+                const info = {
+                    ko: {
+                        trial: "체험 수업 (60분)\n• 펜싱 입문자를 위한 기초 수업\n• 기본 자세와 동작 학습\n• 장비 제공",
+                        private: "개인 레슨 (60분)\n• 맞춤형 1:1 전문 레슨\n• 세부 기술 훈련\n• 영상 분석",
+                        group: "그룹 수업 (90분)\n• 실전 경험 위주 훈련\n• 스파링 연습\n• 전술 훈련"
+                    },
+                    cn: {
+                        trial: "体验课 (60分钟)\n• 击剑入门基础课程\n• 基本姿势和动作学习\n• 提供装备",
+                        private: "私教课 (60分钟)\n• 一对一专业指导\n• 技术细节训练\n• 视频分析",
+                        group: "团体课 (90分钟)\n• 实战经验培训\n• 对战练习\n• 战术训练"
+                    },
+                    en: {
+                        trial: "Trial Class (60min)\n• Introduction to fencing\n• Basic stance and movements\n• Equipment provided",
+                        private: "Private Lesson (60min)\n• Personalized coaching\n• Detailed technique training\n• Video analysis",
+                        group: "Group Class (90min)\n• Practice-oriented training\n• Sparring sessions\n• Tactical training"
+                    }
+                };
+                
+                return Object.values(info[lang]).join('\n\n');
+            };
+
+            const getScheduleInfo = (lang) => {
+                const info = {
+                    ko: "운영시간:\n평일: 10:00-22:00\n주말: 10:00-18:00\n\n수업 시간:\n• 체험/개인 레슨: 예약제\n• 그룹 수업: 평일 저녁 7시, 주말 오전 10시\n\n* 레벨과 강사 일정에 따라 조정 가능",
+                    cn: "营业时间:\n工作日: 10:00-22:00\n周末: 10:00-18:00\n\n课程时间:\n• 体验/私教课: 需预约\n• 团体课: 工作日晚7点, 周末早10点\n\n* 可根据水平和教练时间调整",
+                    en: "Business Hours:\nWeekdays: 10:00-22:00\nWeekends: 10:00-18:00\n\nClass Schedule:\n• Trial/Private: By appointment\n• Group: 7PM weekdays, 10AM weekends\n\n* Adjustable based on level and instructor"
+                };
+                return info[lang];
+            };
+
+            const getPriceInfo = (lang) => {
+                const info = {
+                    ko: "가격 안내:\n\n1. 체험 수업\n• 1회: 50,000원\n• 장비 대여 포함\n\n2. 개인 레슨\n• 1회: 100,000원\n• 10회: 900,000원\n\n3. 그룹 수업\n• 1회: 80,000원\n• 월 회원: 300,000원(주 2회)",
+                    cn: "价格信息:\n\n1. 体验课\n• 单次: ₩50,000\n• 含装备租借\n\n2. 私教课\n• 单次: ₩100,000\n• 10次: ₩900,000\n\n3. 团体课\n• 单次: ₩80,000\n• 月卡: ₩300,000(每周2次)",
+                    en: "Pricing:\n\n1. Trial Class\n• Single: ₩50,000\n• Equipment rental included\n\n2. Private Lesson\n• Single: ₩100,000\n• 10 sessions: ₩900,000\n\n3. Group Class\n• Single: ₩80,000\n• Monthly: ₩300,000(twice/week)"
+                };
+                return info[lang];
+            };
+
+            const getLocationInfo = (lang) => {
+                const info = {
+                    ko: "위치 안내:\n\n본점: 서울시 강남구 삼성동 123-45\n• 지하철 2호선 삼성중앙역 3번 출구 도보 5분\n• 주차 가능\n\n체험수업 예약 및 상담: 02-123-4567",
+                    cn: "位置信息:\n\n总店: 首尔市江南区三成洞123-45\n• 地铁2号线三成中央站3号出口步行5分钟\n• 可停车\n\n体验课预约咨询: 02-123-4567",
+                    en: "Location:\n\nMain Branch: 123-45 Samseong-dong, Gangnam-gu, Seoul\n• 5 min walk from Exit 3, Samseong Central Station (Line 2)\n• Parking available\n\nBooking & Inquiries: 02-123-4567"
+                };
+                return info[lang];
+            };
+
+            const getContextualSuggestions = (lang, context) => {
+                const suggestions = [];
+                
+                if (context.lastIntent === 'course' && !context.askedPrice) {
+                    suggestions.push({
+                        ko: "💡 수업 가격이 궁금하신가요?",
+                        cn: "💡 想了解课程价格吗？",
+                        en: "💡 Would you like to know about the class prices?"
+                    });
+                }
+                
+                if (context.lastIntent === 'price' || context.askedPrice) {
+                    suggestions.push({
+                        ko: "💡 체험 수업을 예약하시겠습니까?",
+                        cn: "💡 要预约体验课吗？",
+                        en: "💡 Would you like to book a trial class?"
+                    });
+                }
+
+                if (suggestions.length === 0) return '';
+                return '\n\n' + suggestions.map(s => s[lang]).join('\n');
+            };
+
+            const addMessage = (type, content) => {
+                setMessages(prev => [...prev, { type, content, timestamp: new Date() }]);
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                if (!input.trim()) return;
+
+                const userInput = input.trim();
+                setInput('');
+                addMessage('user', userInput);
+                setIsLoading(true);
+
+                try {
+                    const intents = detectIntents(userInput);
+                    const response = generateResponse(intents, userInput);
+                    
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    addMessage('bot', response);
+                } catch (error) {
+                    console.error('Error:', error);
+                    const errorMessages = {
+                        ko: "죄송합니다. 오류가 발생했습니다. 다시 시도해주세요.",
+                        cn: "抱歉，发生错误。请重试。",
+                        en: "Sorry, an error occurred. Please try again."
+                    };
+                    addMessage('error', errorMessages[language]);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const placeholders = {
+                ko: "질문을 입력하세요...",
+                cn: "请输入您的问题...",
+                en: "Type your question..."
+            };
+
+            return (
+                <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+                    <div className="h-[500px] overflow-y-auto p-4">
+                        {messages.map((message, index) => (
+                            <div key={index} className={`mb-4 ${message.type === 'user' ? 'text-right' : 'text-left'}`}>
+                                <div className={`inline-block p-3 rounded-lg max-w-[80%] whitespace-pre-wrap ${
+                                    message.type === 'user' 
+                                        ? 'bg-blue-500 text-white'
+                                        : message.type === 'error'
+                                            ? 'bg-red-100 text-red-800'
+                                            : 'bg-gray-100 text-gray-800'
+                                }`}>
+                                    {message.content}
+                                </div>
+                            </div>
+                        ))}
+                        {isLoading && (
+                            <div className="flex items-center space-x-2 text-gray-400">
+                                <div className="w-2 h-2 rounded-full animate-bounce bg-gray-400"></div>
+                                <div className="w-2 h-2 rounded-full animate-bounce bg-gray-400" style={{animationDelay: '0.2s'}}></div>
+                                <div className="w-2 h-2 rounded-full animate-bounce bg-gray-400" style={{animationDelay: '0.4s'}}></div>
+                            </div>
+                        )}
+                        <div ref={chatEndRef} />
+                    </div>
+
+                    <form onSubmit={handleSubmit} className="p-4 border-t">
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                placeholder={placeholders[language]}
+                                className="flex-1 p-2 border rounded"
+                                disabled={isLoading}
+                            />
+                            <button 
+                                type="submit"
+                                disabled={isLoading}
+                                className="p-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+                            >
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                </svg>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            );
+        };
+
+        // 初始化渲染
+        ReactDOM.render(
+            <ChatBot language="ko" />,
+            document.getElementById('chatbot-root')
+        );
+
+        // 语言切换处理
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const lang = btn.dataset.lang;
+                document.querySelectorAll('.lang-btn').forEach(b => 
+                    b.classList.toggle('bg-blue-600', b.dataset.lang === lang)
+                );
+                ReactDOM.render(
+                    <ChatBot language={lang} />,
+                    document.getElementById('chatbot-root')
+                );
+            });
+        });
+    </script>
+</body>
+</html>
